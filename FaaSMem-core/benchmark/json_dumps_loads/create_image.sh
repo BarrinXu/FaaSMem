@@ -1,0 +1,1 @@
+docker build --no-cache -t json_dumps_loads ../benchmark/json_dumps_loads

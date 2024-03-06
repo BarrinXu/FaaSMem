@@ -1,0 +1,60 @@
+functions:
+
+  - function_name: bert
+    image_name: bert
+    configs:
+      priority: 10
+      lru_gen_interval: 8 
+
+  - function_name: html_server
+    image_name: html_server
+    configs:
+      priority: 10
+      lru_gen_interval: 32
+
+  - function_name: graph_bfs
+    image_name: graph_bfs
+    configs:
+      priority: 10
+      lru_gen_interval: 4
+
+  - function_name: float_operation
+    image_name: float_operation
+    configs:
+      priority: 10
+
+  - function_name: matmul
+    image_name: matmul
+    configs:
+      priority: 10
+
+  - function_name: linpack
+    image_name: linpack
+    configs:
+      priority: 10
+
+  - function_name: image_processing
+    image_name: image_processing
+    configs:
+      priority: 10
+
+  - function_name: chameleon
+    image_name: chameleon
+    configs:
+      priority: 10
+
+  - function_name: pyaes
+    image_name: pyaes
+    configs:
+      priority: 10
+
+  - function_name: gzip_compression
+    image_name: gzip_compression
+    configs:
+      priority: 10
+
+  - function_name: json_dumps_loads
+    image_name: json_dumps_loads
+    configs:
+      priority: 10
+

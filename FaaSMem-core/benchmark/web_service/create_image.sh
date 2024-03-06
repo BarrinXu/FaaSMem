@@ -1,0 +1,1 @@
+docker build --no-cache -t html_server ../benchmark/web_service/html_server

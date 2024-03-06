@@ -1,0 +1,10 @@
+flask
+gevent
+requests
+docker
+PyYAML
+numpy
+pandas
+tqdm
+seaborn
+matplotlib

@@ -1,0 +1,1 @@
+/root/fastswap-linux-6.1.55/linux-6.1.55-kernel/scripts/gdb/vmlinux-gdb.py

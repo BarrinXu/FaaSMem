@@ -1,0 +1,1 @@
+docker build --no-cache -t image_processing ../benchmark/image_processing

@@ -1,0 +1,1 @@
+docker build --no-cache -t gzip_compression ../benchmark/gzip_compression

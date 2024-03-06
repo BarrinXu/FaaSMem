@@ -1,0 +1,1 @@
+docker build --no-cache -t graph_bfs ../benchmark/graph/graph_bfs
