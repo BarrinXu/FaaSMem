@@ -41,10 +41,10 @@ The directory MUST be under an ext4 partition, and has at least 32 GB free space
 
 **Check:** After the script is complete, there should be a 32 GB swapfile under the directory you specified.
 
-## Install the RDMA driver and compile Fastswap on the compute node and the memory node.
+## Install the RDMA driver and build Fastswap on the compute node and the memory node.
 First, on both nodes, enter `Fastswap` directory and execute `bash install_rdma.sh`.
 
-This script installs the RDMA driver, compiles Fastswap framework, and REBOOTS the machine.
+This script installs the RDMA driver and REBOOTS the machine.
 
 Second, after rebooting, enter `Fastswap` directory. 
 On the compute node, execute `bash build_fastswap_driver.sh`. On the memory node, execute `bash build_fastswap_server.sh`.
