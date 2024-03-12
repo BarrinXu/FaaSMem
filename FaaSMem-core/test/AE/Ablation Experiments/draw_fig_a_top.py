@@ -22,7 +22,7 @@ normalize_memory = 0
 
 for i, system in enumerate(['baseline', 'FaaSMem', 'FaaSMem-no-MGLRU', 'FaaSMem-no-semiwarm']):
     latency_data, memory_data = load_form_azure_trace_test(
-        function_names_mapping[function_name], trace_id, start_idx, duration, system, dir='ablation')
+        function_names_mapping[function_name], trace_id, start_idx, duration, system)
     systems_memory_list[system] = np.array(memory_data)
     print(system, np.average(systems_memory_list[system]) / (1024 ** 3))
     normalize_memory = max(normalize_memory, max(systems_memory_list[system]))

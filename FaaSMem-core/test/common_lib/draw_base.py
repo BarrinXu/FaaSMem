@@ -102,14 +102,15 @@ def load_for_rdma_vs_hdd(function_name):
 def load_form_azure_trace_test(function_name, trace_id, start_idx, duration, system, dir='result', in_debug=False,
                                load_firing_timestamps=False, loading_container_nums=False,
                                loading_rdma_bandwidth=False):
-    print(os.getcwd())
     files = os.listdir(dir)
+    files.sort()
     latency_data = None
     memory_data = None
     firing_timestamps = None
     container_nums = None
     has_rdma_data = False
     total_network = 0
+    in_debug = False
     for filename in files:
         if f'({system})' not in filename or '.json' not in filename:
             continue
@@ -144,8 +145,8 @@ def load_form_azure_trace_test(function_name, trace_id, start_idx, duration, sys
                             # print(system, f'RDMA bandwidth: {format(total_network / total_container_num_in_seconds, ".6f")} M/s', )
                 if in_debug:
                     print(function_name, system, format(np.average(memory_data) / 1024 / 1024, '.0f'), 'M', filename)
-    if system == 'FaaSMem':
-        print(system, f'trace-{trace_id}', f'RDMA bandwidth: {format(total_network / 3600, ".8f")} M/s', )
+    # if system == 'FaaSMem':
+    #     print(system, f'trace-{trace_id}', f'RDMA bandwidth: {format(total_network / 3600, ".8f")} M/s', )
     if latency_data is None:
         latency_data = [0]
     if memory_data is None:
@@ -200,3 +201,4 @@ def load_from_AB_test(function_name, loop_cnt, decision_threshold, key='memory')
             elif key == 'time':
                 return data['elapsed_time']
     return None
+

@@ -8,3 +8,5 @@ pandas
 tqdm
 seaborn
 matplotlib
+scipy
+
