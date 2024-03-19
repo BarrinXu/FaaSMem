@@ -41,10 +41,10 @@ The directory MUST be under an ext4 partition, and has at least 32 GB free space
 
 **Check:** After the script is complete, there should be a 32 GB swapfile under the directory you specified.
 
-## Install the RDMA driver and build Fastswap on the compute node and the memory node.
+## Install the RDMA driver and compile Fastswap on the compute node and the memory node.
 First, on both nodes, enter `Fastswap` directory and execute `bash install_rdma.sh`.
 
-This script installs the RDMA driver and REBOOTS the machine.
+This script installs the RDMA driver, compiles Fastswap framework, and REBOOTS the machine.
 
 Second, after rebooting, enter `Fastswap` directory. 
 On the compute node, execute `bash build_fastswap_driver.sh`. On the memory node, execute `bash build_fastswap_server.sh`.
@@ -143,3 +143,21 @@ Within each experiment directory, we prepare some draw scripts `draw*.py`.
 The scripts also require the virtual environment `venv` under `FaaSMem-core`.
 You can enter each directory, and execute `python draw*.py` to visualize the results. 
 Each script will save a PDF format graph in the current directory, except that one script will output a table in the terminal. The graphs and tables generated can be compared with those in the paper.
+
+# Kernel maintenance 
+
+We provide a kernel patch of the modified Linux kernel, which is placed at `linux-6.1.55-fastswap/kernel.patch`.
+
+First, you need a copy of the source of Linux kernel 6.1.55. Then you can apply the patch on it.
+We outline the high level steps here.
+
+```
+wget https://mirrors.edge.kernel.org/pub/linux/kernel/v6.x/linux-6.1.55.tar.gz
+tar -zxvf linux-6.1.55.tar.gz
+cd linux-6.1.55
+git init .
+git add .
+git commit -m "first commit"
+git apply the_path_to_kernel.patch
+```
+
