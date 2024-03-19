@@ -1,0 +1,467 @@
+diff --git a/Makefile b/Makefile
+index 3d839824a..4c4aae857 100644
+--- a/Makefile
++++ b/Makefile
+@@ -2,7 +2,7 @@
+ VERSION = 6
+ PATCHLEVEL = 1
+ SUBLEVEL = 55
+-EXTRAVERSION =
++EXTRAVERSION = -fastswap
+ NAME = Curry Ramen
+ 
+ # *DOCUMENTATION*
+diff --git a/include/linux/frontswap.h b/include/linux/frontswap.h
+index a631bac12..884647ebb 100644
+--- a/include/linux/frontswap.h
++++ b/include/linux/frontswap.h
+@@ -11,15 +11,23 @@ struct frontswap_ops {
+ 	void (*init)(unsigned); /* this swap type was just swapon'ed */
+ 	int (*store)(unsigned, pgoff_t, struct page *); /* store a page */
+ 	int (*load)(unsigned, pgoff_t, struct page *); /* load a page */
++	// fastswap begin
++	int (*load_async)(unsigned, pgoff_t, struct page *); /* load a page async */
++	int (*poll_load)(int); /* poll cpu for one load */
++	// fastswap end
+ 	void (*invalidate_page)(unsigned, pgoff_t); /* page no longer needed */
+ 	void (*invalidate_area)(unsigned); /* swap type just swapoff'ed */
+ };
+ 
+-int frontswap_register_ops(const struct frontswap_ops *ops);
++extern int frontswap_register_ops(const struct frontswap_ops *ops);
+ 
+ extern void frontswap_init(unsigned type, unsigned long *map);
+ extern int __frontswap_store(struct page *page);
+ extern int __frontswap_load(struct page *page);
++// fastswap begin
++extern int __frontswap_load_async(struct page *page);
++extern int __frontswap_poll_load(int cpu);
++// fastswap end
+ extern void __frontswap_invalidate_page(unsigned, pgoff_t);
+ extern void __frontswap_invalidate_area(unsigned);
+ 
+@@ -75,7 +83,23 @@ static inline int frontswap_load(struct page *page)
+ 
+ 	return -1;
+ }
++// fastswap begin
++static inline int frontswap_load_async(struct page *page)
++{
++	if (frontswap_enabled())
++		return __frontswap_load_async(page);
++
++	return -1;
++}
+ 
++static inline int frontswap_poll_load(int cpu)
++{
++	if (frontswap_enabled())
++		return __frontswap_poll_load(cpu);
++
++	return -1;
++}
++// fastswap end
+ static inline void frontswap_invalidate_page(unsigned type, pgoff_t offset)
+ {
+ 	if (frontswap_enabled())
+diff --git a/include/linux/swap.h b/include/linux/swap.h
+index a18cf4b7c..88210df4e 100644
+--- a/include/linux/swap.h
++++ b/include/linux/swap.h
+@@ -215,7 +215,9 @@ enum {
+ 	SWP_SCANNING	= (1 << 14),	/* refcount in scan_swap_map */
+ };
+ 
+-#define SWAP_CLUSTER_MAX 32UL
++// fastswap begin
++#define SWAP_CLUSTER_MAX 64UL
++// fastswap end
+ #define COMPACT_CLUSTER_MAX SWAP_CLUSTER_MAX
+ 
+ /* Bit flag in swap_map */
+diff --git a/mm/frontswap.c b/mm/frontswap.c
+index 279e55b4e..39ac98e88 100644
+--- a/mm/frontswap.c
++++ b/mm/frontswap.c
+@@ -103,6 +103,7 @@ int frontswap_register_ops(const struct frontswap_ops *ops)
+ 	static_branch_inc(&frontswap_enabled_key);
+ 	return 0;
+ }
++EXPORT_SYMBOL(frontswap_register_ops);
+ 
+ /*
+  * Called when a swap device is swapon'd.
+@@ -180,7 +181,9 @@ int __frontswap_store(struct page *page)
+ 	 */
+ 	if (__frontswap_test(sis, offset)) {
+ 		__frontswap_clear(sis, offset);
+-		frontswap_ops->invalidate_page(type, offset);
++		// frontswap begin
++//		frontswap_ops->invalidate_page(type, offset);
++		// frontswap end
+ 	}
+ 
+ 	ret = frontswap_ops->store(type, offset, page);
+@@ -221,6 +224,44 @@ int __frontswap_load(struct page *page)
+ 	return ret;
+ }
+ 
++// frontswap begein
++int __frontswap_load_async(struct page *page)
++{
++	int ret = -1;
++	swp_entry_t entry = { .val = page_private(page), };
++	int type = swp_type(entry);
++	struct swap_info_struct *sis = swap_info[type];
++	pgoff_t offset = swp_offset(entry);
++	struct frontswap_ops *ops;
++
++	VM_BUG_ON(!frontswap_ops);
++	VM_BUG_ON(!PageLocked(page));
++	VM_BUG_ON(sis == NULL);
++
++	if (!__frontswap_test(sis, offset))
++		return -1;
++
++	/* Try loading from each implementation, until one succeeds. */
++	ret = frontswap_ops->load_async(type, offset, page);
++	if (ret == 0)
++		inc_frontswap_loads();
++
++	return ret;
++}
++
++int __frontswap_poll_load(int cpu)
++{
++	VM_BUG_ON(!frontswap_ops);
++
++	/* Try loading from each implementation, until one succeeds. */
++	return frontswap_ops->poll_load(cpu);
++
++	BUG();
++	return -1;
++}
++EXPORT_SYMBOL(__frontswap_poll_load);
++// frontswap end
++
+ /*
+  * Invalidate any data from frontswap associated with the specified swaptype
+  * and offset so that a subsequent "get" will fail.
+@@ -235,7 +276,9 @@ void __frontswap_invalidate_page(unsigned type, pgoff_t offset)
+ 	if (!__frontswap_test(sis, offset))
+ 		return;
+ 
+-	frontswap_ops->invalidate_page(type, offset);
++	// frontswap begin
++//	frontswap_ops->invalidate_page(type, offset);
++	// frontswap end
+ 	__frontswap_clear(sis, offset);
+ 	inc_frontswap_invalidates();
+ }
+diff --git a/mm/memcontrol.c b/mm/memcontrol.c
+index 67b6d8238..48e2127ac 100644
+--- a/mm/memcontrol.c
++++ b/mm/memcontrol.c
+@@ -92,6 +92,10 @@ static bool cgroup_memory_nokmem __ro_after_init;
+ static DECLARE_WAIT_QUEUE_HEAD(memcg_cgwb_frn_waitq);
+ #endif
+ 
++// fastswap begin
++#define FASTSWAP_RECLAIM_CPU 7
++// fastswap end
++
+ /* Whether legacy memory+swap accounting is active */
+ static bool do_memsw_account(void)
+ {
+@@ -2396,13 +2400,32 @@ static unsigned long reclaim_high(struct mem_cgroup *memcg,
+ 	return nr_reclaimed;
+ }
+ 
++// fastswap begin
++#define MAX_RECLAIM_OFFLOAD 2048UL
++// fastswap end
++
++// fastswap begin
+ static void high_work_func(struct work_struct *work)
+ {
+-	struct mem_cgroup *memcg;
++	struct mem_cgroup *memcg = container_of(work, struct mem_cgroup, high_work);
++
++	unsigned long high = memcg->memory.high;
++	unsigned long nr_pages = page_counter_read(&memcg->memory);
++	unsigned long reclaim;
++
++	if (nr_pages > high) {
++		reclaim = min(nr_pages - high, MAX_RECLAIM_OFFLOAD);
++
++		/* reclaim_high only reclaims iff nr_pages > high */
++		reclaim_high(memcg, reclaim, GFP_KERNEL);
++	}
+ 
+-	memcg = container_of(work, struct mem_cgroup, high_work);
+-	reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
++	if (page_counter_read(&memcg->memory) > memcg->memory.high)
++		schedule_work_on(FASTSWAP_RECLAIM_CPU, &memcg->high_work);
++
++//	reclaim_high(memcg, MEMCG_CHARGE_BATCH, GFP_KERNEL);
+ }
++// fastswap end
+ 
+ /*
+  * Clamp the maximum sleep time per allocation batch to 2 seconds. This is
+@@ -2638,6 +2661,12 @@ static int try_charge_memcg(struct mem_cgroup *memcg, gfp_t gfp_mask,
+ 	bool raised_max_event = false;
+ 	unsigned long pflags;
+ 
++	// fastswap begin
++	unsigned long high_limit;
++	unsigned long curr_pages;
++	unsigned long excess;
++	// fastswap end
++
+ retry:
+ 	if (consume_stock(memcg, nr_pages))
+ 		return 0;
+@@ -2773,18 +2802,19 @@ static int try_charge_memcg(struct mem_cgroup *memcg, gfp_t gfp_mask,
+ 	 * change in the meantime.  As high limit is checked again before
+ 	 * reclaim, the cost of mismatch is negligible.
+ 	 */
++	// fastswap begin
+ 	do {
+ 		bool mem_high, swap_high;
+-
+-		mem_high = page_counter_read(&memcg->memory) >
+-			READ_ONCE(memcg->memory.high);
++		high_limit = memcg->memory.high;
++		curr_pages = page_counter_read(&memcg->memory);
++		mem_high = curr_pages > high_limit;
+ 		swap_high = page_counter_read(&memcg->swap) >
+ 			READ_ONCE(memcg->swap.high);
+ 
+ 		/* Don't bother a random interrupted task */
+ 		if (!in_task()) {
+ 			if (mem_high) {
+-				schedule_work(&memcg->high_work);
++				schedule_work_on(FASTSWAP_RECLAIM_CPU, &memcg->high_work);
+ 				break;
+ 			}
+ 			continue;
+@@ -2800,11 +2830,18 @@ static int try_charge_memcg(struct mem_cgroup *memcg, gfp_t gfp_mask,
+ 			 * and distribute reclaim work and delay penalties
+ 			 * based on how much each task is actually allocating.
+ 			 */
+-			current->memcg_nr_pages_over_high += batch;
+-			set_notify_resume(current);
++			excess = curr_pages - high_limit;
++			if (excess > MAX_RECLAIM_OFFLOAD){
++				current->memcg_nr_pages_over_high += MAX_RECLAIM_OFFLOAD;
++				set_notify_resume(current);
++			}
++			else{
++				schedule_work_on(FASTSWAP_RECLAIM_CPU, &memcg->high_work);
++			}
+ 			break;
+ 		}
+ 	} while ((memcg = parent_mem_cgroup(memcg)));
++	// fastswap end
+ 
+ 	if (current->memcg_nr_pages_over_high > MEMCG_CHARGE_BATCH &&
+ 	    !(current->flags & PF_MEMALLOC) &&
+@@ -6380,6 +6417,7 @@ static int memory_high_show(struct seq_file *m, void *v)
+ 		READ_ONCE(mem_cgroup_from_seq(m)->memory.high));
+ }
+ 
++// fastswap begin
+ static ssize_t memory_high_write(struct kernfs_open_file *of,
+ 				 char *buf, size_t nbytes, loff_t off)
+ {
+@@ -6396,6 +6434,7 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
+ 
+ 	page_counter_set_high(&memcg->memory, high);
+ 
++	/*
+ 	for (;;) {
+ 		unsigned long nr_pages = page_counter_read(&memcg->memory);
+ 		unsigned long reclaimed;
+@@ -6418,10 +6457,13 @@ static ssize_t memory_high_write(struct kernfs_open_file *of,
+ 		if (!reclaimed && !nr_retries--)
+ 			break;
+ 	}
++	*/
+ 
+ 	memcg_wb_domain_size_changed(memcg);
++	schedule_work_on(FASTSWAP_RECLAIM_CPU, &memcg->high_work);
+ 	return nbytes;
+ }
++// fastswap end
+ 
+ static int memory_max_show(struct seq_file *m, void *v)
+ {
+diff --git a/mm/memory.c b/mm/memory.c
+index 2083078cd..8e398565d 100644
+--- a/mm/memory.c
++++ b/mm/memory.c
+@@ -77,6 +77,10 @@
+ #include <linux/ptrace.h>
+ #include <linux/vmalloc.h>
+ #include <linux/sched/sysctl.h>
++// fastswap begin
++#include <linux/frontswap.h>
++#include <linux/delay.h>
++// fastswap end
+ 
+ #include <trace/events/kmem.h>
+ 
+diff --git a/mm/page_io.c b/mm/page_io.c
+index 3a5f921b9..757734307 100644
+--- a/mm/page_io.c
++++ b/mm/page_io.c
+@@ -470,11 +470,13 @@ int swap_readpage(struct page *page, bool synchronous,
+ 	}
+ 	delayacct_swapin_start();
+ 
+-	if (frontswap_load(page) == 0) {
+-		SetPageUptodate(page);
+-		unlock_page(page);
++	// fastswap begin
++	if (frontswap_load_async(page) == 0) {
++//		SetPageUptodate(page);
++//		unlock_page(page);
+ 		goto out;
+ 	}
++	// fastswap end
+ 
+ 	if (data_race(sis->flags & SWP_FS_OPS)) {
+ 		swap_readpage_fs(page, plug);
+@@ -524,6 +526,19 @@ int swap_readpage(struct page *page, bool synchronous,
+ 	return ret;
+ }
+ 
++// fastswap begin
++int swap_readpage_sync(struct page *page)
++{
++	VM_BUG_ON_PAGE(!PageSwapCache(page), page);
++	VM_BUG_ON_PAGE(!PageLocked(page), page);
++	VM_BUG_ON_PAGE(PageUptodate(page), page);
++
++	BUG_ON(frontswap_load(page));
++
++	return 0;
++}
++// fastswap end
++
+ void __swap_read_unplug(struct swap_iocb *sio)
+ {
+ 	struct iov_iter from;
+diff --git a/mm/swap.h b/mm/swap.h
+index cc08c459c..63c7d123e 100644
+--- a/mm/swap.h
++++ b/mm/swap.h
+@@ -10,6 +10,9 @@ int sio_pool_init(void);
+ struct swap_iocb;
+ int swap_readpage(struct page *page, bool do_poll,
+ 		  struct swap_iocb **plug);
++// fastswap begin
++int swap_readpage_sync(struct page *);
++// fastswap end
+ void __swap_read_unplug(struct swap_iocb *plug);
+ static inline void swap_read_unplug(struct swap_iocb *plug)
+ {
+diff --git a/mm/swap_state.c b/mm/swap_state.c
+index 438d0676c..8f606d17c 100644
+--- a/mm/swap_state.c
++++ b/mm/swap_state.c
+@@ -22,6 +22,9 @@
+ #include <linux/swap_slots.h>
+ #include <linux/huge_mm.h>
+ #include <linux/shmem_fs.h>
++// fastswap begin
++#include <linux/frontswap.h>
++// fastswap end
+ #include "internal.h"
+ #include "swap.h"
+ 
+@@ -528,6 +531,21 @@ struct page *read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
+ 	return retpage;
+ }
+ 
++// fastswap begin
++struct page *read_swap_cache_sync(swp_entry_t entry, gfp_t gfp_mask,
++				  struct vm_area_struct *vma, unsigned long addr)
++{
++	bool page_was_allocated;
++	struct page *retpage = __read_swap_cache_async(entry, gfp_mask,
++						       vma, addr, &page_was_allocated);
++
++	if (page_was_allocated)
++		swap_readpage_sync(retpage);
++
++	return retpage;
++}
++// fastswap end
++
+ static unsigned int __swapin_nr_pages(unsigned long prev_offset,
+ 				      unsigned long offset,
+ 				      int hits,
+@@ -607,6 +625,8 @@ static unsigned long swapin_nr_pages(unsigned long offset)
+  *
+  * Caller must hold read mmap_lock if vmf->vma is not NULL.
+  */
++
++// fastswap begin
+ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
+ 				struct vm_fault *vmf)
+ {
+@@ -622,6 +642,13 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
+ 	struct vm_area_struct *vma = vmf->vma;
+ 	unsigned long addr = vmf->address;
+ 
++//	int cpu;
++//
++//	preempt_disable();
++//	cpu = smp_processor_id();
++//	faultpage = read_swap_cache_sync(entry, gfp_mask, vma, addr);
++//	preempt_enable();
++
+ 	mask = swapin_nr_pages(offset) - 1;
+ 	if (!mask)
+ 		goto skip;
+@@ -659,7 +686,10 @@ struct page *swap_cluster_readahead(swp_entry_t entry, gfp_t gfp_mask,
+ skip:
+ 	/* The page was likely read above, so no need for plugging here */
+ 	return read_swap_cache_async(entry, gfp_mask, vma, addr, do_poll, NULL);
++//	frontswap_poll_load(cpu);
++//	return faultpage;
+ }
++// fastswap end
+ 
+ int init_swap_address_space(unsigned int type, unsigned long nr_pages)
+ {
+diff --git a/mm/vmscan.c b/mm/vmscan.c
+index 93d6f27dd..0e2c311e2 100644
+--- a/mm/vmscan.c
++++ b/mm/vmscan.c
+@@ -6,7 +6,7 @@
+  *  kswapd added: 7.1.96  sct
+  *  Removed kswapd_ctl limits, and swap out as many pages as needed
+  *  to bring the system back to freepages.high: 2.4.97, Rik van Riel.
+- *  Zone aware kswapd started 02/00, Kanoj Sarcar (kanoj@sgi.com).
++ *  Zone awashrink_page_listre kswapd started 02/00, Kanoj Sarcar (kanoj@sgi.com).
+  *  Multiqueue VM started 5.8.00, Rik van Riel.
+  */
+ 
+diff --git a/mm/zswap.c b/mm/zswap.c
+index b3829ada4..5357ea83c 100644
+--- a/mm/zswap.c
++++ b/mm/zswap.c
+@@ -1534,8 +1534,8 @@ static int __init init_zswap(void)
+ 	shrink_wq = create_workqueue("zswap-shrink");
+ 	if (!shrink_wq)
+ 		goto fallback_fail;
+-
+-	ret = frontswap_register_ops(&zswap_frontswap_ops);
++	ret = -1;
++	// ret = frontswap_register_ops(&zswap_frontswap_ops);
+ 	if (ret)
+ 		goto destroy_wq;
+ 	if (zswap_debugfs_init())
