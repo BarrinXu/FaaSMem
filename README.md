@@ -9,6 +9,12 @@ This repository contains the prototype implementation of FaaSMem, the Fastswap p
 
 # Installation
 
+## Create the two nodes on CloudLab
+
+* Click ``Experiments - Start Experiment``
+1. Select a Profile: Select the default profile ``small-lan``
+2. Parameterize: Number of Nodes: 2, Select OS image: UBUNTU 22.04, Optional physical node type: c6220
+
 From now on, you have two nodes, a compute node and a memory node. Both nodes are running Ubuntu 22.04. MAKE SURE you are operating under root at anytime.
 
 ## Install the modified Linux 6.1 kernel on the compute node.
