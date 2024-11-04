@@ -98,7 +98,7 @@ Then execute `bash run_fastswap_driver.sh` to connect the memory node. The scrip
 
 5. On the compute node, open three windows (Window-1, Window-2, Window-3) using screen or tmux. All of them MUST source the virtual environment `venv` under `FaaSMem-core`. DO NOT terminate them.
 
-6. In Window-1, enter `FaaSMem-core/src/workflow_manager`, execute `python gateway.py`, which starts the gateway of FaaSMem to receive requests. In Window-2, enter `FaaSMem-core/src/workflow_manager`, execute `python test_server 127.0.0.1`.py, which starts the server of FaaSMem to process requests. DO NOT terminate them.
+6. In Window-1, enter `FaaSMem-core/src/workflow_manager`, execute `python gateway.py`, which starts the gateway of FaaSMem to receive requests. In Window-2, enter `FaaSMem-core/src/workflow_manager`, execute `python test_server.py 127.0.0.1`, which starts the server of FaaSMem to process requests. DO NOT terminate them.
 
 
 ## Conduct each experiment
